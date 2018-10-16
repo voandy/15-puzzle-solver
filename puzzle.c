@@ -8,9 +8,6 @@
 #include <sys/resource.h>
 #include <sys/time.h>
 
-#define GRID_SIZE 4
-#define GRID_SQUARES 16
-
 /**
  * READ THIS DESCRIPTION
  *
@@ -26,6 +23,19 @@ typedef struct node{
 /**
  * Global Variables
  */
+
+#define GRID_SIZE 4
+#define GRID_SQUARES 16
+#define MAX_MOVES 4
+#define INFINITY INT_MAX
+
+/* Helper array of the x and y positions of each tile */
+int tile_positions[GRID_SQUARES][2] = {
+	{0, 0}, {1, 0}, {2, 0}, {3, 0},
+	{0, 1}, {1, 1}, {2, 1}, {3, 1},
+	{0, 2}, {1, 2}, {2, 2}, {3, 2},
+	{0, 3}, {1, 3}, {2, 3}, {3, 3}
+};
 
 // used to track the position of the blank in a state,
 // so it doesn't have to be searched every time we check if an operator is applicable
@@ -54,12 +64,11 @@ unsigned long expanded;
  * Helper arrays for the applicable function
  * applicability of operators: 0 = left, 1 = right, 2 = up, 3 = down
  */
-int ap_opLeft[]  = { 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1 };
-int ap_opRight[]  = { 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0 };
-int ap_opUp[]  = { 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 };
-int ap_opDown[]  = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0 };
+int ap_opLeft[]	= { 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1 };
+int ap_opRight[]	= { 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0 };
+int ap_opUp[]	= { 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 };
+int ap_opDown[]	= { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0 };
 int *ap_ops[] = { ap_opLeft, ap_opRight, ap_opUp, ap_opDown };
-
 
 /* print state */
 void print_state( int* s )
@@ -71,26 +80,27 @@ void print_state( int* s )
 }
 
 void printf_comma (long unsigned int n) {
-    if (n < 0) {
-        printf ("-");
-        printf_comma (-n);
-        return;
-    }
-    if (n < 1000) {
-        printf ("%lu", n);
-        return;
-    }
-    printf_comma (n/1000);
-    printf (",%03lu", n%1000);
+		if (n < 0) {
+				printf ("-");
+				printf_comma (-n);
+				return;
+		}
+		if (n < 1000) {
+				printf ("%lu", n);
+				return;
+		}
+		printf_comma (n/1000);
+		printf (",%03lu", n%1000);
 }
 
 /* returns the manhattan distance of a single tile to its final destination */
 int manhattan_tile( int tile_pos, int tile_dest )
 {
-	int x_pos = tile_pos % GRID_SIZE;
-	int y_pos = tile_pos / GRID_SIZE;
-	int x_dest = tile_dest % GRID_SIZE;
-	int y_dest = tile_dest / GRID_SIZE;
+	// uses array 'tile_positions' so they don't have to be calculated every time
+	int x_pos = tile_positions[tile_pos][0];
+	int y_pos = tile_positions[tile_pos][1];
+	int x_dest = tile_positions[tile_dest][0];
+	int y_dest = tile_positions[tile_dest][1];
 
 	return( abs(x_pos - x_dest) + abs(y_pos - y_dest) );
 }
@@ -101,8 +111,10 @@ int manhattan( int* state )
 	int sum = 0;
 
 	int i;
-	for( i = 0; i < 16; i++ )
-		if (state[i] != 0) {
+	for( i = 0; i < GRID_SQUARES; i++ )
+		// don't count if blank tile or tile is already in position
+		if (state[i] != 0 && state[i] != i)
+		{
 			sum += manhattan_tile(i, state[i]);
 		}
 
@@ -112,7 +124,7 @@ int manhattan( int* state )
 /* return 1 if op is applicable in state, otherwise return 0 */
 int applicable( int op )
 {
-       	return( ap_ops[op][blank_pos] );
+			 	return( ap_ops[op][blank_pos] );
 }
 
 
@@ -132,6 +144,44 @@ void apply( node* n, int op )
 	blank_pos = t;
 }
 
+/* finds and sets the blank_pos given a state */
+void set_blank_pos( int* state )
+{
+	int i;
+	for( i = 0; i < GRID_SQUARES; i++ )
+	{
+		if (state[i] == 0)
+		{
+			blank_pos = i;
+			return;
+		}
+	}
+}
+
+/* given a state and moves list sets which moves are valid */
+void set_valid_moves( int* state , int* valid_moves ){
+	set_blank_pos(state);
+
+	int i;
+	for( i = 0; i < GRID_SQUARES; i++ )
+	{
+		valid_moves[i] = applicable(i);
+	}
+}
+
+/* copies the state of n into newNode */
+void copy_state( node* n, node* newNode ){
+	int i;
+	for( i = 0; i < GRID_SQUARES; i++){
+		newNode->state[i] = n->state[i];
+	}
+}
+
+/* returns the lesser of the two values given */
+int minimum(int x, int y) {
+	return (x < y ? x : y);
+}
+
 /* Recursive IDA */
 node* ida( node* node, int threshold, int* newThreshold )
 {
@@ -142,13 +192,59 @@ node* ida( node* node, int threshold, int* newThreshold )
 	 * Algorithm in Figure 2 of handout
 	 */
 
+	struct node *newNode = malloc(sizeof(node));
+	struct node *result = malloc(sizeof(node));
+
+	int valid_moves[MAX_MOVES];
+	set_valid_moves(node->state, valid_moves);
+
+	int i;
+	for( i = 0; i < MAX_MOVES; i++ )
+	{
+		// only consider valid moves
+		if (valid_moves[i])
+		{
+			// copies state to newNode and applies move
+			copy_state(node, newNode);
+			apply(newNode, i);
+
+			// increment cost
+			newNode->g = node->g + 1;
+
+			// find f(n) for newNode
+			newNode->f = newNode->g + manhattan(newNode->state);
+
+
+			if( newNode->f > threshold )
+			{
+				*newThreshold = minimum(newNode->f, *newThreshold);
+			} else {
+				if (manhattan(newNode->state) == 0){
+					return newNode;
+				}
+				result = ida(newNode, threshold, newThreshold);
+				if (result != NULL)
+				{
+					return result;
+				}
+			}
+		}
+
+		free(newNode);
+
+		// no solution foundß
+		return(NULL);
+	}
+
+	/* END MY CODE */
+
 
 	return( NULL );
 }
 
 
 /* main IDA control loop */
-int IDA_control_loop(  ){
+int IDA_control_loop(	){
 	node* r = NULL;
 
 	int threshold;
@@ -168,6 +264,14 @@ int IDA_control_loop(  ){
 	 *
 	 * Algorithm in Figure 1 of handout
 	 */
+
+	 // int newThreshold;
+	 //
+	 // while(){
+		//  newThreshold = INFINITY;
+	 // }
+
+	 /* END MY CODE */
 
 	if(r)
 		return r->g;
@@ -230,8 +334,6 @@ int main( int argc, char **argv )
 	initial_node.f=0;
 
 	print_state( initial_node.state );
-	printf("%d\n", manhattan( initial_node.state ) );
-
 
 	/* solve */
 	float t0 = compute_current_time();
