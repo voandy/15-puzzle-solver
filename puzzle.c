@@ -8,6 +8,8 @@
 #include <sys/resource.h>
 #include <sys/time.h>
 
+#define GRID_SIZE 4
+#define GRID_SQUARES 16
 
 /**
  * READ THIS DESCRIPTION
@@ -83,12 +85,14 @@ void printf_comma (long unsigned int n) {
 }
 
 /* returns the manhattan distance of a single tile to its final destination */
-int manhattan_tile( int tile_pos, int tile_val)
+int manhattan_tile( int tile_pos, int tile_dest )
 {
-	int x_pos;
-	int y_pos;
+	int x_pos = tile_pos % GRID_SIZE;
+	int y_pos = tile_pos / GRID_SIZE;
+	int x_dest = tile_dest % GRID_SIZE;
+	int y_dest = tile_dest / GRID_SIZE;
 
-	x_pos = 
+	return( abs(x_pos - x_dest) + abs(y_pos - y_dest) );
 }
 
 /* return the sum of manhattan distances from state to goal */
@@ -96,10 +100,11 @@ int manhattan( int* state )
 {
 	int sum = 0;
 
-	/**
-	 * FILL WITH YOUR CODE
-	 */
-
+	int i;
+	for( i = 0; i < 16; i++ )
+		if (state[i] != 0) {
+			sum += manhattan_tile(i, state[i]);
+		}
 
 	return( sum );
 }
@@ -225,6 +230,7 @@ int main( int argc, char **argv )
 	initial_node.f=0;
 
 	print_state( initial_node.state );
+	printf("%d\n", manhattan( initial_node.state ) );
 
 
 	/* solve */
