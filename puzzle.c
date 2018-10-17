@@ -18,16 +18,16 @@ typedef struct node{
 	int state[16];
 	int g;
 	int f;
+	// move applied to reach node
+	int operator;
 } node;
 
 /**
  * Global Variables
  */
 
-#define GRID_SIZE 4
 #define GRID_SQUARES 16
 #define MAX_MOVES 4
-#define INFINITY INT_MAX
 
 /* Helper array of the x and y positions of each tile */
 int tile_positions[GRID_SQUARES][2] = {
@@ -59,6 +59,8 @@ unsigned long expanded;
 #define RIGHT 1
 #define UP 2
 #define DOWN 3
+
+int opposite_dir[MAX_MOVES] = { 1, 0, 3, 2 };
 
 /*
  * Helper arrays for the applicable function
@@ -112,13 +114,29 @@ int manhattan( int* state )
 
 	int i;
 	for( i = 0; i < GRID_SQUARES; i++ )
+	{
 		// don't count if blank tile or tile is already in position
 		if (state[i] != 0 && state[i] != i)
 		{
 			sum += manhattan_tile(i, state[i]);
 		}
+	}
 
 	return( sum );
+}
+
+/* finds and sets the blank_pos given a state */
+void set_blank_pos( int* state )
+{
+	int i;
+	for( i = 0; i < GRID_SQUARES; i++ )
+	{
+		if (state[i] == 0)
+		{
+			blank_pos = i;
+			return;
+		}
+	}
 }
 
 /* return 1 if op is applicable in state, otherwise return 0 */
@@ -144,36 +162,22 @@ void apply( node* n, int op )
 	blank_pos = t;
 }
 
-/* finds and sets the blank_pos given a state */
-void set_blank_pos( int* state )
-{
-	int i;
-	for( i = 0; i < GRID_SQUARES; i++ )
-	{
-		if (state[i] == 0)
-		{
-			blank_pos = i;
-			return;
-		}
-	}
-}
-
-/* given a state and moves list sets which moves are valid */
+/* given a state and list of possible moves, sets which moves are valid */
 void set_valid_moves( int* state , int* valid_moves ){
 	set_blank_pos(state);
 
 	int i;
-	for( i = 0; i < GRID_SQUARES; i++ )
+	for( i = 0; i < MAX_MOVES; i++ )
 	{
 		valid_moves[i] = applicable(i);
 	}
 }
 
-/* copies the state of n into newNode */
-void copy_state( node* n, node* newNode ){
+/* copies the state of n into new_node */
+void copy_state( node* n, node* new_node ){
 	int i;
 	for( i = 0; i < GRID_SQUARES; i++){
-		newNode->state[i] = n->state[i];
+		new_node->state[i] = n->state[i];
 	}
 }
 
@@ -192,9 +196,10 @@ node* ida( node* node, int threshold, int* newThreshold )
 	 * Algorithm in Figure 2 of handout
 	 */
 
-	struct node *newNode = malloc(sizeof(node));
-	struct node *result = malloc(sizeof(node));
+	struct node* new_node = malloc(sizeof(struct node));
+	struct node* r;
 
+	// create a list if valid moves
 	int valid_moves[MAX_MOVES];
 	set_valid_moves(node->state, valid_moves);
 
@@ -204,37 +209,58 @@ node* ida( node* node, int threshold, int* newThreshold )
 		// only consider valid moves
 		if (valid_moves[i])
 		{
-			// copies state to newNode and applies move
-			copy_state(node, newNode);
-			apply(newNode, i);
-
-			// increment cost
-			newNode->g = node->g + 1;
-
-			// find f(n) for newNode
-			newNode->f = newNode->g + manhattan(newNode->state);
-
-
-			if( newNode->f > threshold )
+			if ( node->operator > 0)
 			{
-				*newThreshold = minimum(newNode->f, *newThreshold);
-			} else {
-				if (manhattan(newNode->state) == 0){
-					return newNode;
-				}
-				result = ida(newNode, threshold, newThreshold);
-				if (result != NULL)
+				// prevents ida from reversing last move
+				if ( opposite_dir[i] == node->operator )
 				{
-					return result;
+					continue;
+				}
+			}
+
+			generated++;
+
+			copy_state(node, new_node);
+
+			// applies move to new_node
+			set_blank_pos(new_node->state);
+			apply(new_node, i);
+
+			// stores move used to reach this node
+			new_node->operator = i;
+
+			// stores manhattan value so we only need to calculate it once
+			int hueristic = manhattan(new_node->state);
+
+			// update cost and heuristic
+			new_node->g = node->g + 1;
+			new_node->f = new_node->g + hueristic;
+
+			if( new_node->f > threshold )
+			{
+				*newThreshold = minimum(new_node->f, *newThreshold);
+			} else {
+				if (hueristic == 0){
+					// goal state found, return node
+					r = new_node;
+					free(new_node);
+					return r;
+				}
+
+				expanded++;
+
+				// if goal not found recursively repeat
+				r = ida(new_node, threshold, newThreshold);
+
+				if (r != NULL)
+				{
+					return r;
 				}
 			}
 		}
-
-		free(newNode);
-
-		// no solution foundß
-		return(NULL);
 	}
+
+	free(new_node);
 
 	/* END MY CODE */
 
@@ -265,13 +291,28 @@ int IDA_control_loop(	){
 	 * Algorithm in Figure 1 of handout
 	 */
 
-	 // int newThreshold;
-	 //
-	 // while(){
-		//  newThreshold = INFINITY;
-	 // }
+	int newThreshold;
 
-	 /* END MY CODE */
+	while(r == NULL)
+	{
+		// set newThreshold to infinity
+		newThreshold = INT_MAX;
+
+		struct node new_node;
+		copy_state(&initial_node, &new_node);
+		new_node.g = 0;
+
+		r = ida(&new_node, threshold, &newThreshold);
+
+		if( r == NULL) {
+			// threshold increased, print new threshold
+			threshold = newThreshold;
+			printf("%d ", newThreshold);
+		}
+
+	}
+
+	/* END MY CODE */
 
 	if(r)
 		return r->g;
@@ -332,6 +373,7 @@ int main( int argc, char **argv )
 	/* initialize the initial node */
 	initial_node.g=0;
 	initial_node.f=0;
+	initial_node.operator = -1;
 
 	print_state( initial_node.state );
 
