@@ -8,12 +8,6 @@
 #include <sys/resource.h>
 #include <sys/time.h>
 
-/**
- * READ THIS DESCRIPTION
- *
- * node data structure: containing state, g, f
- * you can extend it with more information if needed
- */
 typedef struct node{
 	int state[16];
 	int g;
@@ -29,13 +23,19 @@ typedef struct node{
 #define GRID_SQUARES 16
 #define MAX_MOVES 4
 
-/* Helper array of the x and y positions of each tile */
+/**
+ * Helper array of the x and y positions of each tile
+ * Largely redundant since tile_dist was implemented but no reason not to use it
+ */
 int tile_positions[GRID_SQUARES][2] = {
 	{0, 0}, {1, 0}, {2, 0}, {3, 0},
 	{0, 1}, {1, 1}, {2, 1}, {3, 1},
 	{0, 2}, {1, 2}, {2, 2}, {3, 2},
 	{0, 3}, {1, 3}, {2, 3}, {3, 3}
 };
+
+// stores the manhattan distance between every possible pair of tiles
+int tile_dist[GRID_SQUARES][GRID_SQUARES];
 
 // used to track the position of the blank in a state,
 // so it doesn't have to be searched every time we check if an operator is applicable
@@ -49,7 +49,6 @@ node initial_node;
 unsigned long generated;
 unsigned long expanded;
 
-
 /**
  * The id of the four available actions for moving the blank (empty slot). e.x.
  * Left: moves the blank to the left, etc.
@@ -60,6 +59,7 @@ unsigned long expanded;
 #define UP 2
 #define DOWN 3
 
+// index of opposite directions
 int opposite_dir[MAX_MOVES] = { 1, 0, 3, 2 };
 
 /*
@@ -67,9 +67,9 @@ int opposite_dir[MAX_MOVES] = { 1, 0, 3, 2 };
  * applicability of operators: 0 = left, 1 = right, 2 = up, 3 = down
  */
 int ap_opLeft[]	= { 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1 };
-int ap_opRight[]	= { 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0 };
+int ap_opRight[] = { 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0 };
 int ap_opUp[]	= { 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 };
-int ap_opDown[]	= { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0 };
+int ap_opDown[] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0 };
 int *ap_ops[] = { ap_opLeft, ap_opRight, ap_opUp, ap_opDown };
 
 /* print state */
@@ -107,36 +107,36 @@ int manhattan_tile( int tile_pos, int tile_dest )
 	return( abs(x_pos - x_dest) + abs(y_pos - y_dest) );
 }
 
+/* calculates the mantattan distance between every tile pair */
+void populate_tile_dist()
+{
+	int i;
+	int j;
+	for( i = 0; i < GRID_SQUARES; i++  )
+	{
+		for( j = 0; j < GRID_SQUARES; j++  )
+		{
+			tile_dist[i][j] = manhattan_tile(i,j);
+		}
+	}
+}
+
 /* return the sum of manhattan distances from state to goal */
 int manhattan( int* state )
 {
 	int sum = 0;
 
 	int i;
-	for( i = 0; i < GRID_SQUARES; i++ )
+	for( i = 0; i < GRID_SQUARES; i++  )
 	{
 		// don't count if blank tile or tile is already in position
-		if (state[i] != 0 && state[i] != i)
+		if (state[i] != 0 && state[i] != i )
 		{
-			sum += manhattan_tile(i, state[i]);
+			sum += tile_dist[i][state[i]];
 		}
 	}
 
 	return( sum );
-}
-
-/* finds and sets the blank_pos given a state */
-void set_blank_pos( int* state )
-{
-	int i;
-	for( i = 0; i < GRID_SQUARES; i++ )
-	{
-		if (state[i] == 0)
-		{
-			blank_pos = i;
-			return;
-		}
-	}
 }
 
 /* return 1 if op is applicable in state, otherwise return 0 */
@@ -162,25 +162,6 @@ void apply( node* n, int op )
 	blank_pos = t;
 }
 
-/* given a state and list of possible moves, sets which moves are valid */
-void set_valid_moves( int* state , int* valid_moves ){
-	set_blank_pos(state);
-
-	int i;
-	for( i = 0; i < MAX_MOVES; i++ )
-	{
-		valid_moves[i] = applicable(i);
-	}
-}
-
-/* copies the state of n into new_node */
-void copy_state( node* n, node* new_node ){
-	int i;
-	for( i = 0; i < GRID_SQUARES; i++){
-		new_node->state[i] = n->state[i];
-	}
-}
-
 /* returns the lesser of the two values given */
 int minimum(int x, int y) {
 	return (x < y ? x : y);
@@ -189,81 +170,81 @@ int minimum(int x, int y) {
 /* Recursive IDA */
 node* ida( node* node, int threshold, int* newThreshold )
 {
-
-	/**
-	 * FILL WITH YOUR CODE
-	 *
-	 * Algorithm in Figure 2 of handout
-	 */
-
-	struct node* new_node = malloc(sizeof(struct node));
 	struct node* r;
 
-	// create a list if valid moves
-	int valid_moves[MAX_MOVES];
-	set_valid_moves(node->state, valid_moves);
+	int prev_f;
+	int prev_operator;
+	int hueristic;
 
 	int i;
 	for( i = 0; i < MAX_MOVES; i++ )
 	{
 		// only consider valid moves
-		if (valid_moves[i])
+		if (!applicable(i))
 		{
-			if ( node->operator > 0)
+			continue;
+		}
+
+		// prevents ida from reversing last move
+		if ( node->operator > 0)
+		{
+			if ( i == opposite_dir[node->operator] )
 			{
-				// prevents ida from reversing last move
-				if ( opposite_dir[i] == node->operator )
-				{
-					continue;
-				}
-			}
-
-			generated++;
-
-			copy_state(node, new_node);
-
-			// applies move to new_node
-			set_blank_pos(new_node->state);
-			apply(new_node, i);
-
-			// stores move used to reach this node
-			new_node->operator = i;
-
-			// stores manhattan value so we only need to calculate it once
-			int hueristic = manhattan(new_node->state);
-
-			// update cost and heuristic
-			new_node->g = node->g + 1;
-			new_node->f = new_node->g + hueristic;
-
-			if( new_node->f > threshold )
-			{
-				*newThreshold = minimum(new_node->f, *newThreshold);
-			} else {
-				if (hueristic == 0){
-					// goal state found, return node
-					r = new_node;
-					free(new_node);
-					return r;
-				}
-
-				expanded++;
-
-				// if goal not found recursively repeat
-				r = ida(new_node, threshold, newThreshold);
-
-				if (r != NULL)
-				{
-					return r;
-				}
+				continue;
 			}
 		}
+
+		// move valid and new node generated
+		generated++;
+
+		// store current values for reversal later
+		prev_f = node->f;
+		prev_operator = node->operator;
+
+		// applies move to node
+		apply(node, i);
+
+		// stores move used to reach this node
+		node->operator = i;
+
+		// stores manhattan value so we only need to calculate it once
+		hueristic = manhattan(node->state);
+
+		// update cost and heuristic
+		node->g = node->g + 1;
+		node->f = node->g + hueristic;
+
+		if( node->f > threshold )
+		{
+			*newThreshold = minimum(node->f, *newThreshold);
+		}
+		else
+		{
+			if (hueristic == 0){
+				// goal state found, return node
+				r = node;
+				return r;
+			}
+
+			// if goal not found recursively repeat
+			expanded++;
+			r = ida(node, threshold, newThreshold);
+
+			// return r if goal state found
+			if (r != NULL)
+			{
+				return r;
+			}
+		}
+
+		// reverse move on node before next iteration
+		apply(node, opposite_dir[i]);
+
+		node->g = node->g - 1;
+
+		node->f = prev_f;
+		node->operator = prev_operator;
 	}
-
-	free(new_node);
-
-	/* END MY CODE */
-
 
 	return( NULL );
 }
@@ -284,13 +265,6 @@ int IDA_control_loop(	){
 
 	printf( "Initial Estimate = %d\nThreshold = ", threshold );
 
-
-	/**
-	 * FILL WITH YOUR CODE
-	 *
-	 * Algorithm in Figure 1 of handout
-	 */
-
 	int newThreshold;
 
 	while(r == NULL)
@@ -298,21 +272,15 @@ int IDA_control_loop(	){
 		// set newThreshold to infinity
 		newThreshold = INT_MAX;
 
-		struct node new_node;
-		copy_state(&initial_node, &new_node);
-		new_node.g = 0;
-
-		r = ida(&new_node, threshold, &newThreshold);
+		r = ida(&initial_node, threshold, &newThreshold);
 
 		if( r == NULL) {
 			// threshold increased, print new threshold
 			threshold = newThreshold;
-			printf("%d ", newThreshold);
+			printf("%d ", threshold);
 		}
 
 	}
-
-	/* END MY CODE */
 
 	if(r)
 		return r->g;
@@ -373,9 +341,14 @@ int main( int argc, char **argv )
 	/* initialize the initial node */
 	initial_node.g=0;
 	initial_node.f=0;
+
+	// initial node has no previous action
 	initial_node.operator = -1;
 
 	print_state( initial_node.state );
+
+	// populates tile_dist array
+	populate_tile_dist();
 
 	/* solve */
 	float t0 = compute_current_time();

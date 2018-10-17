@@ -65,6 +65,3 @@ dkms.conf
 
 # Executables
 15puzzle
-
-# Test Files
-/test
